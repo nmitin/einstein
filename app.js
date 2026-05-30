@@ -56,31 +56,11 @@ const categories = [
   },
 ];
 
-const solution = [
-  { color: "yellow", nation: "norwegian", drink: "water", smoke: "dunhill", pet: "cats" },
-  { color: "blue", nation: "dane", drink: "tea", smoke: "blend", pet: "horses" },
-  { color: "red", nation: "brit", drink: "milk", smoke: "pallmall", pet: "birds" },
-  { color: "green", nation: "german", drink: "coffee", smoke: "prince", pet: "fish" },
-  { color: "white", nation: "swede", drink: "beer", smoke: "bluemaster", pet: "dogs" },
-];
-
-const clues = [
-  "Англичанин живет в красном доме.",
-  "У шведа есть собаки.",
-  "Датчанин пьет чай.",
-  "Зеленый дом стоит сразу слева от белого.",
-  "В зеленом доме пьют кофе.",
-  "Тот, кто курит Pall Mall, держит птиц.",
-  "В желтом доме курят Dunhill.",
-  "В среднем доме пьют молоко.",
-  "Норвежец живет в первом доме.",
-  "Курящий Blend живет рядом с тем, у кого кошки.",
-  "У владельца лошадей сосед курит Dunhill.",
-  "Курящий BlueMaster пьет пиво.",
-  "Немец курит Prince.",
-  "Норвежец живет рядом с синим домом.",
-  "Курящий Blend живет рядом с тем, кто пьет воду.",
-];
+const categoryIds = categories.map((category) => category.id);
+const storageKey = "einstein-web-puzzle-state-v2";
+const legacyStorageKey = "einstein-web-puzzle-state";
+const maxGeneratorAttempts = 80;
+const maxSolverSolutions = 2;
 
 const state = {
   selected: null,
@@ -90,9 +70,9 @@ const state = {
   board: {},
   notes: {},
   revealedHints: new Set(),
+  puzzle: null,
 };
 
-const storageKey = "einstein-web-puzzle-state";
 const palette = document.querySelector("#palette");
 const board = document.querySelector("#board");
 const cluesList = document.querySelector("#clues");
@@ -123,6 +103,262 @@ function formatTime(seconds) {
   return `${hrs}:${mins}:${secs}`;
 }
 
+function shuffle(values) {
+  const copy = [...values];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
+}
+
+function sample(values, count) {
+  return shuffle(values).slice(0, count);
+}
+
+function makeRandomSolution() {
+  const solution = Array.from({ length: 5 }, () => ({}));
+  categories.forEach((category) => {
+    shuffle(category.items).forEach((item, houseIndex) => {
+      solution[houseIndex][category.id] = item.id;
+    });
+  });
+  return solution;
+}
+
+function posOf(solution, itemId) {
+  return solution.findIndex((house) => Object.values(house).includes(itemId));
+}
+
+function itemCategory(itemId) {
+  return categoryIds.find((id) => categoryById(id).items.some((item) => item.id === itemId));
+}
+
+function itemText(itemId) {
+  return itemById(itemId)?.label || itemId;
+}
+
+function clueText(clue) {
+  if (clue.type === "same") return `${itemText(clue.a)} связан с ${itemText(clue.b)}.`;
+  if (clue.type === "position") return `${itemText(clue.a)} находится в доме №${clue.pos + 1}.`;
+  if (clue.type === "leftOf") return `${itemText(clue.a)} стоит сразу слева от ${itemText(clue.b)}.`;
+  if (clue.type === "rightOf") return `${itemText(clue.a)} стоит сразу справа от ${itemText(clue.b)}.`;
+  if (clue.type === "nextTo") return `${itemText(clue.a)} живет рядом с ${itemText(clue.b)}.`;
+  return "Условие.";
+}
+
+function clueKey(clue) {
+  return [clue.type, clue.a, clue.b, clue.pos].filter((value) => value !== undefined).join(":");
+}
+
+function createCandidateClues(solution) {
+  const clues = [];
+  const allItems = categories.flatMap((category) => category.items.map((item) => item.id));
+
+  for (let i = 0; i < allItems.length; i += 1) {
+    for (let j = i + 1; j < allItems.length; j += 1) {
+      const a = allItems[i];
+      const b = allItems[j];
+      if (itemCategory(a) === itemCategory(b)) continue;
+
+      const posA = posOf(solution, a);
+      const posB = posOf(solution, b);
+      if (posA === posB) clues.push({ type: "same", a, b });
+      if (posA + 1 === posB) clues.push({ type: "leftOf", a, b });
+      if (posA - 1 === posB) clues.push({ type: "rightOf", a, b });
+      if (Math.abs(posA - posB) === 1) clues.push({ type: "nextTo", a, b });
+    }
+  }
+
+  allItems.forEach((itemId) => {
+    clues.push({ type: "position", a: itemId, pos: posOf(solution, itemId) });
+  });
+
+  return clues.map((clue) => ({ ...clue, text: clueText(clue) }));
+}
+
+function buildItemPositionMap(solution) {
+  const map = new Map();
+  solution.forEach((house, index) => {
+    Object.values(house).forEach((itemId) => map.set(itemId, index));
+  });
+  return map;
+}
+
+function matchesClue(positionMap, clue) {
+  const posA = positionMap.get(clue.a);
+  const posB = clue.b ? positionMap.get(clue.b) : undefined;
+
+  if (clue.type === "same") return posA === posB;
+  if (clue.type === "position") return posA === clue.pos;
+  if (clue.type === "leftOf") return posA + 1 === posB;
+  if (clue.type === "rightOf") return posA - 1 === posB;
+  if (clue.type === "nextTo") return Math.abs(posA - posB) === 1;
+  return true;
+}
+
+function solutionMatches(solution, clues) {
+  const positionMap = buildItemPositionMap(solution);
+  return clues.every((clue) => matchesClue(positionMap, clue));
+}
+
+function permutations(values) {
+  const result = [];
+  const used = new Array(values.length).fill(false);
+  const current = [];
+
+  function walk() {
+    if (current.length === values.length) {
+      result.push([...current]);
+      return;
+    }
+
+    values.forEach((value, index) => {
+      if (used[index]) return;
+      used[index] = true;
+      current.push(value);
+      walk();
+      current.pop();
+      used[index] = false;
+    });
+  }
+
+  walk();
+  return result;
+}
+
+const categoryPermutations = Object.fromEntries(
+  categories.map((category) => [category.id, permutations(category.items.map((item) => item.id))]),
+);
+
+function canStillMatch(partial, clues) {
+  const map = new Map();
+  partial.forEach((house, index) => {
+    Object.values(house).forEach((itemId) => map.set(itemId, index));
+  });
+
+  return clues.every((clue) => {
+    const hasA = map.has(clue.a);
+    const hasB = !clue.b || map.has(clue.b);
+    if (hasA && hasB) return matchesClue(map, clue);
+    if (clue.type === "position" && hasA) return map.get(clue.a) === clue.pos;
+    return true;
+  });
+}
+
+function solvePuzzle(clues, limit = maxSolverSolutions) {
+  const fixedCategory = categories[0];
+  const fixedPermutations = categoryPermutations[fixedCategory.id];
+  const otherCategories = categories.slice(1);
+  const solutions = [];
+
+  function walk(categoryIndex, partial) {
+    if (solutions.length >= limit) return;
+    if (categoryIndex === otherCategories.length) {
+      if (solutionMatches(partial, clues)) solutions.push(partial.map((house) => ({ ...house })));
+      return;
+    }
+
+    const category = otherCategories[categoryIndex];
+    for (const permutation of categoryPermutations[category.id]) {
+      const candidate = partial.map((house, houseIndex) => ({
+        ...house,
+        [category.id]: permutation[houseIndex],
+      }));
+      if (canStillMatch(candidate, clues)) walk(categoryIndex + 1, candidate);
+      if (solutions.length >= limit) return;
+    }
+  }
+
+  for (const permutation of fixedPermutations) {
+    const partial = Array.from({ length: 5 }, (_, houseIndex) => ({ [fixedCategory.id]: permutation[houseIndex] }));
+    if (canStillMatch(partial, clues)) walk(0, partial);
+    if (solutions.length >= limit) break;
+  }
+
+  return solutions;
+}
+
+function minimizeClues(clues) {
+  let working = [...clues];
+  for (const clue of shuffle(working)) {
+    if (working.length <= 9) break;
+    const candidate = working.filter((item) => clueKey(item) !== clueKey(clue));
+    if (solvePuzzle(candidate).length === 1) working = candidate;
+  }
+  return working;
+}
+
+function generatePuzzle() {
+  const solution = makeRandomSolution();
+  const clues = [];
+
+  solution.forEach((house, houseIndex) => {
+    clues.push({ type: "position", a: house.color, pos: houseIndex });
+  });
+
+  categories
+    .filter((category) => category.id !== "color")
+    .forEach((category) => {
+      solution.forEach((house) => {
+        clues.push({ type: "same", a: house[category.id], b: house.color });
+      });
+    });
+
+  return {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    solution,
+    clues: shuffle(clues.map((clue) => ({ ...clue, text: clueText(clue) }))),
+  };
+}
+
+
+function fallbackPuzzle() {
+  const solution = [
+    { color: "yellow", nation: "norwegian", drink: "water", smoke: "dunhill", pet: "cats" },
+    { color: "blue", nation: "dane", drink: "tea", smoke: "blend", pet: "horses" },
+    { color: "red", nation: "brit", drink: "milk", smoke: "pallmall", pet: "birds" },
+    { color: "green", nation: "german", drink: "coffee", smoke: "prince", pet: "fish" },
+    { color: "white", nation: "swede", drink: "beer", smoke: "bluemaster", pet: "dogs" },
+  ];
+
+  const clueData = [
+    { type: "same", a: "brit", b: "red" },
+    { type: "same", a: "swede", b: "dogs" },
+    { type: "same", a: "dane", b: "tea" },
+    { type: "leftOf", a: "green", b: "white" },
+    { type: "same", a: "green", b: "coffee" },
+    { type: "same", a: "pallmall", b: "birds" },
+    { type: "same", a: "yellow", b: "dunhill" },
+    { type: "position", a: "milk", pos: 2 },
+    { type: "position", a: "norwegian", pos: 0 },
+    { type: "nextTo", a: "blend", b: "cats" },
+    { type: "nextTo", a: "horses", b: "dunhill" },
+    { type: "same", a: "bluemaster", b: "beer" },
+    { type: "same", a: "german", b: "prince" },
+    { type: "nextTo", a: "norwegian", b: "blue" },
+    { type: "nextTo", a: "blend", b: "water" },
+  ];
+
+  return {
+    id: "classic",
+    solution,
+    clues: clueData.map((clue) => ({ ...clue, text: clueText(clue) })),
+  };
+}
+
+function resetProgress(keepPuzzle = false) {
+  state.seconds = 0;
+  state.board = {};
+  state.notes = {};
+  state.revealedHints = new Set();
+  state.selected = null;
+  if (!keepPuzzle) state.puzzle = generatePuzzle();
+  save();
+  render();
+  updateStatus();
+}
+
 function save() {
   localStorage.setItem(
     storageKey,
@@ -130,6 +366,7 @@ function save() {
       seconds: state.seconds,
       board: state.board,
       notes: state.notes,
+      puzzle: state.puzzle,
       revealedHints: Array.from(state.revealedHints),
     }),
   );
@@ -137,16 +374,20 @@ function save() {
 
 function load() {
   const raw = localStorage.getItem(storageKey);
-  if (!raw) return;
+  localStorage.removeItem(legacyStorageKey);
+  if (!raw) return false;
 
   try {
     const data = JSON.parse(raw);
     state.seconds = Number(data.seconds) || 0;
     state.board = data.board || {};
     state.notes = data.notes || {};
+    state.puzzle = data.puzzle || null;
     state.revealedHints = new Set(data.revealedHints || []);
+    return Boolean(state.puzzle?.solution?.length && state.puzzle?.clues?.length);
   } catch {
     localStorage.removeItem(storageKey);
+    return false;
   }
 }
 
@@ -222,6 +463,7 @@ function clearCell(houseIndex, categoryId) {
     delete state.board[houseIndex][categoryId];
     save();
     render();
+    updateStatus();
   }
 }
 
@@ -297,9 +539,9 @@ function renderBoard() {
 
 function renderClues() {
   cluesList.innerHTML = "";
-  clues.forEach((text, index) => {
+  state.puzzle.clues.forEach((clue, index) => {
     const item = document.createElement("li");
-    item.textContent = text;
+    item.textContent = clue.text;
     if (state.revealedHints.has(index)) item.classList.add("revealed");
     cluesList.append(item);
   });
@@ -353,7 +595,7 @@ function validate(markCells = false) {
     for (let houseIndex = 0; houseIndex < 5; houseIndex += 1) {
       const value = state.board[houseIndex]?.[category.id];
       if (value) filled += 1;
-      if (value && solution[houseIndex][category.id] !== value) {
+      if (value && state.puzzle.solution[houseIndex][category.id] !== value) {
         wrong.push({ houseIndex, categoryId: category.id });
       }
     }
@@ -370,7 +612,7 @@ function validate(markCells = false) {
         if (!value) continue;
         const cellIndex = rowIndex * 5 + houseIndex;
         const cell = document.querySelectorAll(".cell")[cellIndex];
-        cell.classList.add(solution[houseIndex][category.id] === value ? "correct" : "wrong");
+        cell.classList.add(state.puzzle.solution[houseIndex][category.id] === value ? "correct" : "wrong");
       }
     });
   }
@@ -420,10 +662,10 @@ function revealHint() {
   }
 
   const hint = openCells[0];
-  const value = solution[hint.houseIndex][hint.categoryId];
+  const value = state.puzzle.solution[hint.houseIndex][hint.categoryId];
   placeItem(hint.houseIndex, hint.categoryId, value);
 
-  const clueIndex = Math.min(state.revealedHints.size, clues.length - 1);
+  const clueIndex = Math.min(state.revealedHints.size, state.puzzle.clues.length - 1);
   state.revealedHints.add(clueIndex);
   save();
   render();
@@ -445,14 +687,7 @@ pauseButton.addEventListener("click", () => {
 });
 
 resetButton.addEventListener("click", () => {
-  state.seconds = 0;
-  state.board = {};
-  state.notes = {};
-  state.revealedHints = new Set();
-  state.selected = null;
-  localStorage.removeItem(storageKey);
-  render();
-  updateStatus();
+  resetProgress(false);
 });
 
 clearButton.addEventListener("click", () => {
@@ -473,6 +708,9 @@ setInterval(() => {
   }
 }, 1000);
 
-load();
+if (!load()) {
+  state.puzzle = generatePuzzle();
+  save();
+}
 render();
 updateStatus();
