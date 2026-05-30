@@ -35,6 +35,13 @@
             <div class="status-pill" id="statusPill">Заполняйте дома</div>
           </div>
           <div class="board" id="board" aria-label="Таблица решения"></div>
+          <section class="logic-grid-section" aria-label="Матрица заметок">
+            <div class="section-title">
+              <h2>Матрица заметок</h2>
+              <p>Клик: возможно / нет / точно</p>
+            </div>
+            <div class="logic-grid" id="logicGrid"></div>
+          </section>
         </section>
 
         <aside class="clues-panel">
@@ -44,14 +51,6 @@
           </div>
           <ol class="clues" id="clues"></ol>
         </aside>
-      </section>
-
-      <section class="logic-grid-section" aria-label="Матрица заметок">
-        <div class="section-title">
-          <h2>Матрица заметок</h2>
-          <p>Клик: возможно / нет / точно</p>
-        </div>
-        <div class="logic-grid" id="logicGrid"></div>
       </section>
 
       <dialog class="modal" id="resultModal">

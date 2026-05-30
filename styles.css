@@ -130,8 +130,7 @@ h2 {
 
 .side-panel,
 .clues-panel,
-.board-wrap,
-.logic-grid-section {
+.board-wrap {
   border: 1px solid rgba(120, 151, 185, 0.7);
   border-radius: 8px;
   background: var(--panel);
@@ -350,21 +349,22 @@ h2 {
 }
 
 .logic-grid-section {
-  margin-top: 14px;
-  padding: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(120, 151, 185, 0.55);
 }
 
 .section-title p {
   margin-bottom: 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
 }
 
 .logic-grid {
   display: grid;
-  grid-template-columns: 140px repeat(5, minmax(46px, 1fr));
+  grid-template-columns: 104px repeat(5, minmax(38px, 1fr));
   gap: 1px;
-  margin-top: 12px;
+  margin-top: 8px;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -374,7 +374,7 @@ h2 {
 .note-head,
 .note-row-head,
 .note-cell {
-  min-height: 42px;
+  min-height: 34px;
   border: 0;
   border-radius: 0;
   background: var(--panel-solid);
@@ -384,7 +384,7 @@ h2 {
 .note-row-head {
   display: grid;
   place-items: center;
-  padding: 7px;
+  padding: 5px;
   font-weight: 900;
   text-align: center;
 }
@@ -392,12 +392,12 @@ h2 {
 .note-row-head {
   justify-items: start;
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.78rem;
 }
 
 .note-cell {
   color: #8998aa;
-  font-size: 1.4rem;
+  font-size: 1.12rem;
   font-weight: 900;
 }
 
@@ -469,11 +469,12 @@ h2 {
   }
 
   .board,
+  .logic-grid-section,
   .board-toolbar {
     min-width: 620px;
   }
 
   .logic-grid {
-    grid-template-columns: 126px repeat(5, 52px);
+    grid-template-columns: 104px repeat(5, 48px);
   }
 }
