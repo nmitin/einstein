@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Головоломка Эйнштейна</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Логическая задача</p>
+          <h1>Головоломка Эйнштейна</h1>
+        </div>
+        <div class="topbar-actions">
+          <div class="timer" id="timer" aria-label="Таймер">00:00:00</div>
+          <button class="icon-button" id="pauseButton" type="button" title="Пауза" aria-label="Пауза">II</button>
+          <button class="icon-button" id="resetButton" type="button" title="Новая игра" aria-label="Новая игра">↻</button>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Игровое поле">
+        <aside class="side-panel">
+          <div class="panel-header">
+            <h2>Признаки</h2>
+            <button id="clearButton" type="button">Очистить</button>
+          </div>
+          <div class="palette" id="palette"></div>
+        </aside>
+
+        <section class="board-wrap">
+          <div class="board-toolbar">
+            <div class="house-tabs" id="houseTabs" aria-label="Дома"></div>
+            <div class="status-pill" id="statusPill">Заполняйте дома</div>
+          </div>
+          <div class="board" id="board" aria-label="Таблица решения"></div>
+        </section>
+
+        <aside class="clues-panel">
+          <div class="panel-header">
+            <h2>Условия</h2>
+            <button id="hintButton" type="button">Подсказка</button>
+          </div>
+          <ol class="clues" id="clues"></ol>
+        </aside>
+      </section>
+
+      <section class="logic-grid-section" aria-label="Матрица заметок">
+        <div class="section-title">
+          <h2>Матрица заметок</h2>
+          <p>Клик: возможно / нет / точно</p>
+        </div>
+        <div class="logic-grid" id="logicGrid"></div>
+      </section>
+
+      <dialog class="modal" id="resultModal">
+        <form method="dialog">
+          <h2 id="modalTitle">Готово</h2>
+          <p id="modalText"></p>
+          <button type="submit">Продолжить</button>
+        </form>
+      </dialog>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
